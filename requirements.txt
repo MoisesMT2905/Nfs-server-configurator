@@ -1,0 +1,8 @@
+# Dependencias del Configurador NFS
+# Tkinter viene con Python estándar en Linux
+# No se requieren dependencias externas adicionales
+# Requisitos del sistema:
+# - Python 3.8+
+# - Linux (Debian/Ubuntu compatible)
+# - nfs-common
+# - nfs-kernel-server
