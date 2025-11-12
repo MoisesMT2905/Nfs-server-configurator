@@ -63,7 +63,7 @@ class NFSValidator:
         if cliente.startswith('@'):
             return True, "Netgroup válido"
         
-        # Intenta validar como IP
+        # Intenta validar como IP con subnet
         if '/' in cliente:
             try:
                 IPv4Network(cliente, strict=False)
@@ -72,11 +72,13 @@ class NFSValidator:
                 return False, f"Subred inválida: {cliente}"
         
         # Intenta validar como IP simple
-        try:
-            IPv4Address(cliente)
-            return True, "IP válida"
-        except ValueError:
-            pass
+        # Si parece una IP (solo dígitos y puntos), debe ser válida
+        if re.match(r'^[\d.]+$', cliente):
+            try:
+                IPv4Address(cliente)
+                return True, "IP válida"
+            except ValueError:
+                return False, f"IP inválida: {cliente}"
         
         # Intenta validar como hostname
         if re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$', cliente):
@@ -130,3 +132,37 @@ class NFSValidator:
             return 0 <= uid <= 65535
         except ValueError:
             return False
+
+
+# Helper functions for GUI
+def validate_path(path: str) -> bool:
+    """Valida que el path sea válido"""
+    return NFSValidator.validar_directorio(path)[0]
+
+
+def validate_client(client: str) -> bool:
+    """Valida que el cliente sea válido"""
+    return NFSValidator.validar_cliente(client)[0]
+
+
+def validate_ip_or_cidr(ip_str: str) -> bool:
+    """Valida IP o CIDR"""
+    try:
+        if '/' in ip_str:
+            IPv4Network(ip_str, strict=False)
+        else:
+            IPv4Address(ip_str)
+        return True
+    except ValueError:
+        return False
+
+
+def validate_hostname(hostname: str) -> bool:
+    """Valida hostname"""
+    pattern = r'^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$'
+    return bool(re.match(pattern, hostname))
+
+
+def validate_uid_gid(value: str) -> bool:
+    """Valida UID/GID"""
+    return NFSValidator.validar_uid_gid(value)
