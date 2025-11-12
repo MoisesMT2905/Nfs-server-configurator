@@ -132,3 +132,23 @@ class ExportsConfigParser:
             return True
         except PermissionError:
             raise PermissionError("No hay permisos para restaurar backup")
+
+
+# Helper functions for GUI compatibility
+def build_export_line(path: str, clients: List[str], options: dict) -> str:
+    """
+    Build complete export line for multiple clients
+    
+    Args:
+        path: Directory path to export
+        clients: List of client addresses/hostnames
+        options: Dictionary of NFS options
+        
+    Returns:
+        Complete export line(s) as string
+    """
+    lines = []
+    for client in clients:
+        line = ExportsConfigParser.generar_linea_export(path, client, options)
+        lines.append(line)
+    return '\n'.join(lines)
