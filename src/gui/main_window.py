@@ -1,330 +1,292 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
-import os
-import sys
-from src.backend.nfs_manager import NFSManager
-from src.backend.config_parser import ExportsConfigParser
-from src.utils.validators import NFSValidator
+#!/usr/bin/env python3
+"""
+"""Interfaz GTK principal. Esta implementación adapta los controles para usar CheckButtons
+para las 13 opciones de permisos NFS solicitadas y añade validaciones para opciones mutuamente
+exclusivas y validación de UID/GID. Mantiene el resto de la lógica de la GUI.
+"""
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, GObject
+import logging
 
-class NFSConfiguratorGUI:
-    """Interfaz gráfica principal del configurador NFS"""
-    
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Configurador NFS - Servidor")
-        self.root.geometry("900x1000")
-        
-        # Variables de control
-        self.directorio_var = tk.StringVar()
-        self.cliente_var = tk.StringVar()
-        self.clientes_lista = []
-        self.opciones_vars = {}
-        self.exportaciones_actuales = []
-        
-        self._construir_interfaz()
-        self._actualizar_exportaciones()
-    
-    def _construir_interfaz(self):
-        """Construye los elementos de la interfaz"""
-        # Frame principal con scroll
-        main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Título
-        titulo = ttk.Label(main_frame, text="CONFIGURADOR NFS - SERVIDOR", 
-                          font=("Arial", 14, "bold"))
-        titulo.pack(pady=10)
-        
-        # Sección: Configuración de Exportación
-        self._crear_seccion_configuracion(main_frame)
-        
-        # Separador
-        ttk.Separator(main_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        
-        # Sección: Opciones de Permisos
-        self._crear_seccion_permisos(main_frame)
-        
-        # Separador
-        ttk.Separator(main_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        
-        # Sección: Exportaciones Configuradas
-        self._crear_seccion_exportaciones(main_frame)
-        
-        # Separador
-        ttk.Separator(main_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        
-        # Botones de acción
-        self._crear_botones_accion(main_frame)
-    
-    def _crear_seccion_configuracion(self, parent):
-        """Crea la sección de configuración básica"""
-        frame = ttk.LabelFrame(parent, text="Configuración de Exportación", padding=10)
-        frame.pack(fill=tk.X, pady=5)
-        
-        # Directorio
-        dir_frame = ttk.Frame(frame)
-        dir_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(dir_frame, text="Directorio a Exportar:").pack(side=tk.LEFT)
-        ttk.Entry(dir_frame, textvariable=self.directorio_var, width=40).pack(side=tk.LEFT, padx=5)
-        ttk.Button(dir_frame, text="Examinar...", command=self._examinar_directorio).pack(side=tk.LEFT)
-        
-        # Cliente
-        cliente_frame = ttk.Frame(frame)
-        cliente_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(cliente_frame, text="Cliente (IP/Subnet/Hostname):").pack(side=tk.LEFT)
-        ttk.Entry(cliente_frame, textvariable=self.cliente_var, width=30).pack(side=tk.LEFT, padx=5)
-        ttk.Button(cliente_frame, text="Agregar Cliente", command=self._agregar_cliente).pack(side=tk.LEFT)
-        
-        # Lista de clientes
-        clientes_label = ttk.Label(frame, text="Clientes Configurados:")
-        clientes_label.pack(anchor=tk.W, pady=(10, 2))
-        
-        self.clientes_listbox = tk.Listbox(frame, height=3)
-        self.clientes_listbox.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        botones_frame = ttk.Frame(frame)
-        botones_frame.pack(fill=tk.X, pady=5)
-        ttk.Button(botones_frame, text="Eliminar Cliente", command=self._eliminar_cliente).pack(side=tk.LEFT, padx=2)
-        ttk.Button(botones_frame, text="Editar Cliente", command=self._editar_cliente).pack(side=tk.LEFT, padx=2)
-    
-    def _crear_seccion_permisos(self, parent):
-        """Crea la sección de opciones de permisos"""
-        frame = ttk.LabelFrame(parent, text="Opciones de Permisos NFS", padding=10)
-        frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        # Crear dos columnas
-        col1 = ttk.Frame(frame)
-        col1.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
-        
-        col2 = ttk.Frame(frame)
-        col2.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
-        
-        # Columna 1: Permisos Básicos
-        ttk.Label(col1, text="Permisos Básicos", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(0, 5))
-        self._crear_radio_grupo(col1, "acceso", ["rw", "ro"])
-        
-        ttk.Label(col1, text="Sincronización", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 5))
-        self._crear_radio_grupo(col1, "sincronizacion", ["sync", "async"])
-        
-        ttk.Label(col1, text="Verificación de Subárbol", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 5))
-        self._crear_radio_grupo(col1, "subtree", ["no_subtree_check", "subtree_check"])
-        
-        # Columna 2: Seguridad
-        ttk.Label(col2, text="Seguridad Root", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(0, 5))
-        self._crear_radio_grupo(col2, "root_squash", ["no_root_squash", "root_squash"])
-        
-        ttk.Label(col2, text="Squash de Usuarios", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 5))
-        self._crear_checkbox(col2, "all_squash", "all_squash - Squash para todos")
-        
-        ttk.Label(col2, text="Seguridad de Puertos", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 5))
-        self._crear_radio_grupo(col2, "puertos", ["insecure", "secure"])
-        
-        # Configuración avanzada (abajo)
-        ttk.Label(frame, text="Configuración Avanzada", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(15, 5))
-        
-        avanzado_frame = ttk.Frame(frame)
-        avanzado_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(avanzado_frame, text="anonuid:").pack(side=tk.LEFT, padx=5)
-        anonuid_var = tk.StringVar()
-        self.opciones_vars['anonuid'] = anonuid_var
-        ttk.Entry(avanzado_frame, textvariable=anonuid_var, width=10).pack(side=tk.LEFT, padx=2)
-        
-        ttk.Label(avanzado_frame, text="anongid:").pack(side=tk.LEFT, padx=5)
-        anongid_var = tk.StringVar()
-        self.opciones_vars['anongid'] = anongid_var
-        ttk.Entry(avanzado_frame, textvariable=anongid_var, width=10).pack(side=tk.LEFT, padx=2)
-    
-    def _crear_radio_grupo(self, parent, grupo, opciones):
-        """Crea un grupo de radio buttons"""
-        var = tk.StringVar(value="")
-        self.opciones_vars[grupo] = var
-        
-        for opcion in opciones:
-            ttk.Radiobutton(parent, text=opcion, variable=var, value=opcion).pack(anchor=tk.W, padx=10)
-    
-    def _crear_checkbox(self, parent, clave, texto):
-        """Crea un checkbox"""
-        var = tk.BooleanVar(value=False)
-        self.opciones_vars[clave] = var
-        ttk.Checkbutton(parent, text=texto, variable=var).pack(anchor=tk.W, padx=10)
-    
-    def _crear_seccion_exportaciones(self, parent):
-        """Crea la sección de exportaciones actuales"""
-        frame = ttk.LabelFrame(parent, text="Exportaciones Configuradas Actualmente", padding=10)
-        frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        self.exportaciones_text = scrolledtext.ScrolledText(frame, height=6, width=80)
-        self.exportaciones_text.pack(fill=tk.BOTH, expand=True, pady=5)
-        self.exportaciones_text.config(state=tk.DISABLED)
-        
-        botones_frame = ttk.Frame(frame)
-        botones_frame.pack(fill=tk.X, pady=5)
-        ttk.Button(botones_frame, text="Actualizar", command=self._actualizar_exportaciones).pack(side=tk.LEFT, padx=2)
-    
-    def _crear_botones_accion(self, parent):
-        """Crea los botones de acción principal"""
-        frame = ttk.Frame(parent)
-        frame.pack(fill=tk.X, pady=10)
-        
-        ttk.Button(frame, text="Validar Configuración", command=self._validar_config).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="Aplicar Cambios", command=self._aplicar_cambios).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="Limpiar Formulario", command=self._limpiar_formulario).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="Salir", command=self.root.quit).pack(side=tk.RIGHT, padx=5)
-    
-    def _examinar_directorio(self):
-        """Abre diálogo para seleccionar directorio"""
-        directorio = filedialog.askdirectory(title="Seleccionar directorio a exportar")
-        if directorio:
-            self.directorio_var.set(directorio)
-    
-    def _agregar_cliente(self):
-        """Agrega un cliente a la lista"""
-        cliente = self.cliente_var.get().strip()
-        if not cliente:
-            messagebox.showwarning("Advertencia", "Ingrese un cliente")
+from src.backend.config_parser import build_export_line
+from src.backend.nfs_manager import NFSManager
+from src.utils.validators import validate_path, validate_client, validate_uid_gid
+
+LOG = logging.getLogger("gui")
+
+class NFSConfiguratorGUI(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Configurador NFS - Servidor")
+        self.set_default_size(800, 600)
+        self.set_border_width(6)
+
+        # Main vertical box
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.add(vbox)
+
+        # Export section
+        frame_export = Gtk.Frame(label="Configuración de Exportación")
+        vbox.pack_start(frame_export, False, False, 0)
+        grid = Gtk.Grid(column_spacing=6, row_spacing=6, margin=6)
+        frame_export.add(grid)
+
+        # Path entry + browse
+        self.path_entry = Gtk.Entry()
+        browse_btn = Gtk.Button(label="Examinar...")
+        browse_btn.connect("clicked", self.on_browse)
+        grid.attach(Gtk.Label(label="Directorio a Exportar:"), 0, 0, 1, 1)
+        grid.attach(self.path_entry, 1, 0, 4, 1)
+        grid.attach(browse_btn, 5, 0, 1, 1)
+
+        # Client entry + add
+        self.client_entry = Gtk.Entry()
+        add_client_btn = Gtk.Button(label="Agregar Cliente")
+        add_client_btn.connect("clicked", self.on_add_client)
+        grid.attach(Gtk.Label(label="Cliente (IP/Subnet/Hostname):"), 0, 1, 1, 1)
+        grid.attach(self.client_entry, 1, 1, 3, 1)
+        grid.attach(add_client_btn, 4, 1, 1, 1)
+
+        # Clients list (simple TextView for initial)
+        self.clients_store = []
+        self.clients_view = Gtk.TextView()
+        self.clients_view.set_editable(False)
+        clients_scrolled = Gtk.ScrolledWindow()
+        clients_scrolled.set_min_content_height(80)
+        clients_scrolled.add(self.clients_view)
+        grid.attach(Gtk.Label(label="Clientes Configurados:"), 0, 2, 1, 1)
+        grid.attach(clients_scrolled, 1, 2, 5, 1)
+
+        # Buttons Edit/Delete
+        edit_btn = Gtk.Button(label="Editar Cliente")
+        edit_btn.connect("clicked", self.on_edit_client)
+        del_btn = Gtk.Button(label="Eliminar Cliente")
+        del_btn.connect("clicked", self.on_delete_client)
+        grid.attach(edit_btn, 1, 3, 1, 1)
+        grid.attach(del_btn, 2, 3, 1, 1)
+
+        # Options frame (use CheckButtons for all 13 options)
+        options_frame = Gtk.Frame(label="Opciones de Permisos NFS")
+        vbox.pack_start(options_frame, False, False, 0)
+        opts_grid = Gtk.Grid(column_spacing=6, row_spacing=6, margin=6)
+        options_frame.add(opts_grid)
+
+        # 1) rw, 2) ro
+        opts_grid.attach(Gtk.Label(label="Permisos Básicos"), 0, 0, 1, 1)
+        self.rw_chk = Gtk.CheckButton(label="rw")
+        self.ro_chk = Gtk.CheckButton(label="ro")
+        opts_grid.attach(self.rw_chk, 0, 1, 1, 1)
+        opts_grid.attach(self.ro_chk, 1, 1, 1, 1)
+
+        # 3) sync, 4) async
+        opts_grid.attach(Gtk.Label(label="Sincronización"), 0, 2, 1, 1)
+        self.sync_chk = Gtk.CheckButton(label="sync")
+        self.async_chk = Gtk.CheckButton(label="async")
+        opts_grid.attach(self.sync_chk, 0, 3, 1, 1)
+        opts_grid.attach(self.async_chk, 1, 3, 1, 1)
+
+        # 5) no_root_squash, 6) root_squash
+        opts_grid.attach(Gtk.Label(label="Seguridad Root"), 2, 0, 1, 1)
+        self.no_root_chk = Gtk.CheckButton(label="no_root_squash")
+        self.root_squash_chk = Gtk.CheckButton(label="root_squash")
+        opts_grid.attach(self.no_root_chk, 2, 1, 1, 1)
+        opts_grid.attach(self.root_squash_chk, 3, 1, 1, 1)
+
+        # 7) all_squash
+        self.all_squash_chk = Gtk.CheckButton(label="all_squash - Squash para todos")
+        opts_grid.attach(self.all_squash_chk, 2, 2, 2, 1)
+
+        # 8) no_subtree_check, 9) subtree_check
+        opts_grid.attach(Gtk.Label(label="Verificación de Subárbol"), 4, 0, 1, 1)
+        self.no_subtree_chk = Gtk.CheckButton(label="no_subtree_check")
+        self.subtree_chk = Gtk.CheckButton(label="subtree_check")
+        opts_grid.attach(self.no_subtree_chk, 4, 1, 1, 1)
+        opts_grid.attach(self.subtree_chk, 5, 1, 1, 1)
+
+        # 10) insecure, 11) secure
+        opts_grid.attach(Gtk.Label(label="Seguridad de Puertos"), 4, 2, 1, 1)
+        self.insecure_chk = Gtk.CheckButton(label="insecure")
+        self.secure_chk = Gtk.CheckButton(label="secure")
+        opts_grid.attach(self.insecure_chk, 4, 3, 1, 1)
+        opts_grid.attach(self.secure_chk, 5, 3, 1, 1)
+
+        # 12) anonuid, 13) anongid
+        opts_grid.attach(Gtk.Label(label="Configuración Avanzada"), 0, 4, 1, 1)
+        opts_grid.attach(Gtk.Label(label="anonuid:"), 1, 4, 1, 1)
+        self.anonuid_entry = Gtk.Entry()
+        opts_grid.attach(self.anonuid_entry, 2, 4, 1, 1)
+        opts_grid.attach(Gtk.Label(label="anongid:"), 3, 4, 1, 1)
+        self.anongid_entry = Gtk.Entry()
+        opts_grid.attach(self.anongid_entry, 4, 4, 1, 1)
+
+        # Exports current (TextView)
+        frame_current = Gtk.Frame(label="Exportaciones Configuradas Actualmente")
+        vbox.pack_start(frame_current, True, True, 0)
+        self.exports_view = Gtk.TextView()
+        self.exports_view.set_editable(False)
+        sc = Gtk.ScrolledWindow()
+        sc.add(self.exports_view)
+        frame_current.add(sc)
+
+        # Bottom buttons
+        hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        apply_btn = Gtk.Button(label="Aplicar Cambios")
+        apply_btn.connect("clicked", self.on_apply)
+        update_btn = Gtk.Button(label="Actualizar")
+        update_btn.connect("clicked", self.on_update)
+        hbox.pack_end(apply_btn, False, False, 0)
+        hbox.pack_end(update_btn, False, False, 0)
+        vbox.pack_start(hbox, False, False, 0)
+
+        # Inicializar vista con exportfs -v
+        self.on_update(None)
+        self.show_all()
+
+    def on_browse(self, widget):
+        dialog = Gtk.FileChooserDialog(title="Seleccione directorio", parent=self, action=Gtk.FileChooserAction.SELECT_FOLDER)
+        dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
+        resp = dialog.run()
+        if resp == Gtk.ResponseType.OK:
+            self.path_entry.set_text(dialog.get_filename())
+        dialog.destroy()
+
+    def on_add_client(self, widget):
+        val = self.client_entry.get_text().strip()
+        if not val:
             return
-        
-        valido, msg = NFSValidator.validar_cliente(cliente)
-        if not valido:
-            messagebox.showerror("Error de Validación", msg)
+        if not validate_client(val):
+            self._show_error("Cliente inválido", f"Cliente '{val}' no parece ser IP/CIDR/hostname válido")
             return
-        
-        if cliente not in self.clientes_lista:
-            self.clientes_lista.append(cliente)
-            self.clientes_listbox.insert(tk.END, cliente)
-            self.cliente_var.set("")
-        else:
-            messagebox.showinfo("Información", "Este cliente ya está en la lista")
-    
-    def _eliminar_cliente(self):
-        """Elimina cliente seleccionado"""
-        seleccion = self.clientes_listbox.curselection()
-        if seleccion:
-            indice = seleccion[0]
-            cliente = self.clientes_lista.pop(indice)
-            self.clientes_listbox.delete(indice)
-    
-    def _editar_cliente(self):
-        """Edita cliente seleccionado"""
-        seleccion = self.clientes_listbox.curselection()
-        if seleccion:
-            indice = seleccion[0]
-            cliente_actual = self.clientes_lista[indice]
-            self.cliente_var.set(cliente_actual)
-            self._eliminar_cliente()
-    
-    def _obtener_opciones(self) -> dict:
-        """Obtiene las opciones seleccionadas"""
-        opciones = {}
-        
-        # Radio buttons
-        for grupo in NFSValidator.PERMISSION_GROUPS:
-            valor = self.opciones_vars[grupo].get()
-            if valor:
-                opciones[valor] = True
-        
-        # Checkboxes
-        if self.opciones_vars['all_squash'].get():
-            opciones['all_squash'] = True
-        
-        # Campos numéricos
-        anonuid = self.opciones_vars['anonuid'].get()
+        self.clients_store.append(val)
+        self._refresh_clients_view()
+        self.client_entry.set_text("")
+
+    def on_edit_client(self, widget):
+        # Simplificado: mostrar diálogo para editar último cliente
+        if not self.clients_store:
+            return
+        old = self.clients_store[-1]
+        dialog = Gtk.MessageDialog(self, 0, Gtk.MessageType.QUESTION, Gtk.ButtonsType.OK_CANCEL, "Editar cliente")
+        dialog.format_secondary_text(f"Editar último cliente ({old}): ingrese nuevo valor")
+        entry = Gtk.Entry()
+        entry.set_text(old)
+        dialog.get_content_area().pack_end(entry, False, False, 0)
+        entry.show()
+        resp = dialog.run()
+        if resp == Gtk.ResponseType.OK:
+            val = entry.get_text().strip()
+            if validate_client(val):
+                self.clients_store[-1] = val
+                self._refresh_clients_view()
+            else:
+                self._show_error("Cliente inválido", f"Valor '{val}' inválido")
+        dialog.destroy()
+
+    def on_delete_client(self, widget):
+        if not self.clients_store:
+            return
+        self.clients_store.pop()
+        self._refresh_clients_view()
+
+    def _refresh_clients_view(self):
+        buf = self.clients_view.get_buffer()
+        buf.set_text("\n".join(self.clients_store))
+
+    def on_update(self, widget):
+        text = NFSManager.list_exports()
+        buf = self.exports_view.get_buffer()
+        buf.set_text(text if text else "No hay exportaciones configuradas")
+
+    def _validate_options(self, options: dict) -> (bool, str):
+        """Valida combinaciones mutuamente exclusivas y valores de anonuid/anongid."""
+        # rw vs ro: exactamente one selected
+        if options.get("rw") and options.get("ro"):
+            return False, "No puede seleccionar 'rw' y 'ro' al mismo tiempo"
+        if not options.get("rw") and not options.get("ro"):
+            return False, "Debe seleccionar al menos 'rw' o 'ro'"
+        # sync vs async
+        if options.get("sync") and options.get("async"):
+            return False, "No puede seleccionar 'sync' y 'async' simultáneamente"
+        # subtree
+        if options.get("no_subtree_check") and options.get("subtree_check"):
+            return False, "No puede seleccionar 'no_subtree_check' y 'subtree_check' al mismo tiempo"
+        # root squash
+        if options.get("no_root_squash") and options.get("root_squash"):
+            return False, "No puede seleccionar 'no_root_squash' y 'root_squash' al mismo tiempo"
+        # secure/insecure
+        if options.get("secure") and options.get("insecure"):
+            return False, "No puede seleccionar 'secure' y 'insecure' al mismo tiempo"
+        # anonuid/anongid validation
+        anonuid = options.get("anonuid")
+        anongid = options.get("anongid")
         if anonuid:
-            opciones['anonuid'] = anonuid
-        
-        anongid = self.opciones_vars['anongid'].get()
+            if not validate_uid_gid(anonuid):
+                return False, f"anonuid '{anonuid}' no es un UID válido"
         if anongid:
-            opciones['anongid'] = anongid
-        
-        return opciones
-    
-    def _validar_config(self):
-        """Valida la configuración actual"""
-        directorio = self.directorio_var.get()
-        if not self.clientes_lista:
-            messagebox.showerror("Error", "Agregue al menos un cliente")
+            if not validate_uid_gid(anongid):
+                return False, f"anongid '{anongid}' no es un GID válido"
+        return True, ""
+
+    def on_apply(self, widget):
+        path = self.path_entry.get_text().strip()
+        if not path:
+            self._show_error("Directorio requerido", "Debe indicar el directorio a exportar")
             return
-        
-        opciones = self._obtener_opciones()
-        
-        # Validar cada cliente
-        errores = []
-        for cliente in self.clientes_lista:
-            valido, msgs = NFSManager.validar_configuracion_completa(directorio, cliente, opciones)
-            if not valido:
-                errores.extend(msgs)
-        
-        if errores:
-            messagebox.showerror("Errores de Validación", "\n".join(errores))
+        if not validate_path(path):
+            self._show_error("Directorio inválido", f"El directorio '{path}' no existe o no es accesible")
+            return
+        if not self.clients_store:
+            self._show_error("Clientes vacíos", "Agregue al menos un cliente")
+            return
+
+        options = {
+            "rw": self.rw_chk.get_active(),
+            "ro": self.ro_chk.get_active(),
+            "sync": self.sync_chk.get_active(),
+            "async": self.async_chk.get_active(),
+            "no_subtree_check": self.no_subtree_chk.get_active(),
+            "subtree_check": self.subtree_chk.get_active(),
+            "no_root_squash": self.no_root_chk.get_active(),
+            "root_squash": self.root_squash_chk.get_active(),
+            "all_squash": self.all_squash_chk.get_active(),
+            "secure": self.secure_chk.get_active(),
+            "insecure": self.insecure_chk.get_active(),
+            "anonuid": self.anonuid_entry.get_text().strip() or None,
+            "anongid": self.anongid_entry.get_text().strip() or None,
+        }
+
+        ok, msg = self._validate_options(options)
+        if not ok:
+            self._show_error("Opciones inválidas", msg)
+            return
+
+        exports_text = build_export_line(path, self.clients_store, options)
+
+        confirm = Gtk.MessageDialog(self, 0, Gtk.MessageType.QUESTION, Gtk.ButtonsType.OK_CANCEL,
+                                    "Confirmar aplicación")
+        confirm.format_secondary_text(f"Se aplicará la siguiente configuración:\n\n{exports_text}")
+        resp = confirm.run()
+        confirm.destroy()
+        if resp != Gtk.ResponseType.OK:
+            return
+
+        # Intentar aplicar (si no hay permisos, NFSManager devolverá mensaje)
+        res = NFSManager.apply_configuration(exports_text)
+        if res.get("ok"):
+            self._show_info("Éxito", res.get("msg"))
+            self.on_update(None)
         else:
-            # Generar preview
-            preview = "Configuración válida:\n\n"
-            for cliente in self.clientes_lista:
-                linea = ExportsConfigParser.generar_linea_export(directorio, cliente, opciones)
-                preview += linea + "\n"
-            messagebox.showinfo("Configuración Válida", preview)
-    
-    def _aplicar_cambios(self):
-        """Aplica los cambios de configuración"""
-        if not NFSManager.verificar_permisos():
-            messagebox.showerror("Error", "Este programa debe ejecutarse como root")
-            return
-        
-        directorio = self.directorio_var.get()
-        if not self.clientes_lista:
-            messagebox.showerror("Error", "Agregue al menos un cliente")
-            return
-        
-        # Generar contenido nuevo para /etc/exports
-        lineas_nuevas = []
-        opciones = self._obtener_opciones()
-        
-        for cliente in self.clientes_lista:
-            linea = ExportsConfigParser.generar_linea_export(directorio, cliente, opciones)
-            lineas_nuevas.append(linea)
-        
-        contenido_nuevo = "\n".join(lineas_nuevas) + "\n"
-        
-        # Confirmar cambios
-        if messagebox.askyesno("Confirmación", f"¿Aplicar estos cambios a /etc/exports?\n\n{contenido_nuevo}"):
-            exito, msg = NFSManager.aplicar_exportaciones(contenido_nuevo)
-            if exito:
-                messagebox.showinfo("Éxito", msg)
-                self._actualizar_exportaciones()
-                self._limpiar_formulario()
-            else:
-                messagebox.showerror("Error", msg)
-    
-    def _limpiar_formulario(self):
-        """Limpia el formulario"""
-        self.directorio_var.set("")
-        self.cliente_var.set("")
-        self.clientes_lista.clear()
-        self.clientes_listbox.delete(0, tk.END)
-        
-        for var in self.opciones_vars.values():
-            if isinstance(var, tk.StringVar):
-                var.set("")
-            elif isinstance(var, tk.BooleanVar):
-                var.set(False)
-    
-    def _actualizar_exportaciones(self):
-        """Actualiza la lista de exportaciones actuales"""
-        try:
-            lineas = ExportsConfigParser.leer_exports()
-            self.exportaciones_text.config(state=tk.NORMAL)
-            self.exportaciones_text.delete(1.0, tk.END)
-            
-            if lineas:
-                for i, linea in enumerate(lineas, 1):
-                    self.exportaciones_text.insert(tk.END, f"{i}. {linea}\n")
-            else:
-                self.exportaciones_text.insert(tk.END, "No hay exportaciones configuradas")
-            
-            self.exportaciones_text.config(state=tk.DISABLED)
-        except Exception as e:
-            self.exportaciones_text.config(state=tk.NORMAL)
-            self.exportaciones_text.delete(1.0, tk.END)
-            self.exportaciones_text.insert(tk.END, f"Error: {str(e)}")
-            self.exportaciones_text.config(state=tk.DISABLED)
+            # Si falta permisos, informar y sugerir usar helper con polkit
+            self._show_error("Fallo al aplicar", res.get("msg"))
+
+    def _show_error(self, title, msg):
+        dlg = Gtk.MessageDialog(self, 0, Gtk.MessageType.ERROR, Gtk.ButtonsType.OK, title)
+        dlg.format_secondary_text(msg)
+        dlg.run()
+        dlg.destroy()
+
+    def _show_info(self, title, msg):
+        dlg = Gtk.MessageDialog(self, 0, Gtk.MessageType.INFO, Gtk.ButtonsType.OK, title)
+        dlg.format_secondary_text(msg)
+        dlg.run()
+        dlg.destroy()
