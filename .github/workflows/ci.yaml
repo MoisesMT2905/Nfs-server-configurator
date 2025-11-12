@@ -6,10 +6,16 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+# Global permissions - most restrictive by default
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint with flake8
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout code
@@ -35,6 +41,8 @@ jobs:
   test:
     name: Test with pytest
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ['3.8', '3.9', '3.10', '3.11']
@@ -75,6 +83,8 @@ jobs:
   security:
     name: Security checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout code
@@ -105,6 +115,8 @@ jobs:
     name: Build check
     runs-on: ubuntu-latest
     needs: [lint, test]
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout code
