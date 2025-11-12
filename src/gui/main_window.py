@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
 """
-"""Interfaz GTK principal. Esta implementación adapta los controles para usar CheckButtons
-para las 13 opciones de permisos NFS solicitadas y añade validaciones para opciones mutuamente
-exclusivas y validación de UID/GID. Mantiene el resto de la lógica de la GUI.
+Interfaz GTK principal para el configurador NFS.
+
+Esta implementación usa CheckButtons para las 13 opciones de permisos NFS,
+añade validaciones para opciones mutuamente exclusivas y validación de UID/GID.
+Soporta ejecución como root (acceso directo) o como usuario normal (vía D-Bus helper).
 """
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GObject
 import logging
+import os
 
 from src.backend.config_parser import build_export_line
 from src.backend.nfs_manager import NFSManager
 from src.utils.validators import validate_path, validate_client, validate_uid_gid
 
 LOG = logging.getLogger("gui")
+
+# Intentar importar pydbus para soporte D-Bus (opcional si se ejecuta como root)
+try:
+    from pydbus import SystemBus
+    DBUS_AVAILABLE = True
+except ImportError:
+    DBUS_AVAILABLE = False
+    LOG.warning("pydbus no disponible - solo funcionará como root")
 
 class NFSConfiguratorGUI(Gtk.Window):
     def __init__(self):
@@ -270,14 +281,74 @@ class NFSConfiguratorGUI(Gtk.Window):
         if resp != Gtk.ResponseType.OK:
             return
 
-        # Intentar aplicar (si no hay permisos, NFSManager devolverá mensaje)
-        res = NFSManager.apply_configuration(exports_text)
-        if res.get("ok"):
-            self._show_info("Éxito", res.get("msg"))
-            self.on_update(None)
+        # Determinar si ejecutar como root o vía D-Bus helper
+        is_root = os.geteuid() == 0
+        
+        if is_root:
+            # Ejecución como root: usar NFSManager directamente
+            LOG.info("Ejecutando como root, aplicando directamente")
+            res = NFSManager.apply_configuration(exports_text)
+            
+            if res.get("ok"):
+                self._show_info("Éxito", res.get("msg"))
+                self.on_update(None)
+            else:
+                self._show_error("Fallo al aplicar", res.get("msg"))
         else:
-            # Si falta permisos, informar y sugerir usar helper con polkit
-            self._show_error("Fallo al aplicar", res.get("msg"))
+            # Ejecución como usuario normal: usar D-Bus helper
+            LOG.info("Ejecutando como usuario normal, usando helper D-Bus")
+            
+            if not DBUS_AVAILABLE:
+                self._show_error(
+                    "D-Bus no disponible",
+                    "Para ejecutar como usuario normal necesita python3-pydbus instalado.\n"
+                    "Alternativamente, ejecute como root: sudo python3 main.py"
+                )
+                return
+            
+            # Invocar helper vía D-Bus
+            ok, message = self._apply_via_dbus(exports_text)
+            
+            if ok:
+                self._show_info("Éxito", message)
+                self.on_update(None)
+            else:
+                self._show_error("Fallo al aplicar", message)
+    
+    def _apply_via_dbus(self, exports_text: str) -> tuple:
+        """
+        Aplica configuración vía D-Bus helper.
+        
+        Args:
+            exports_text: Configuración a aplicar
+            
+        Returns:
+            tuple: (bool: éxito, str: mensaje)
+        """
+        try:
+            # Conectar al bus del sistema
+            bus = SystemBus()
+            
+            # Obtener proxy del helper
+            helper = bus.get('org.yast2.NFSHelper')
+            
+            # Llamar al método ApplyConfiguration
+            # Esto disparará el diálogo de polkit para autorización
+            ok, message = helper.ApplyConfiguration(exports_text)
+            
+            return (ok, message)
+            
+        except Exception as e:
+            error_msg = (
+                f"Error al comunicarse con el helper D-Bus: {str(e)}\n\n"
+                "Posibles causas:\n"
+                "- El servicio helper no está ejecutándose\n"
+                "  (sudo systemctl start yast2-nfs-helper)\n"
+                "- La política polkit no está instalada\n"
+                "- Autenticación cancelada o denegada"
+            )
+            LOG.error(f"Error D-Bus: {e}")
+            return (False, error_msg)
 
     def _show_error(self, title, msg):
         dlg = Gtk.MessageDialog(self, 0, Gtk.MessageType.ERROR, Gtk.ButtonsType.OK, title)

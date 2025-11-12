@@ -7,6 +7,8 @@ from src.utils.validators import NFSValidator
 class NFSManager:
     """Gestor de configuración NFS del sistema"""
     
+    EXPORTS_FILE = '/etc/exports'
+    
     @staticmethod
     def verificar_permisos() -> bool:
         """Verifica si se ejecuta con permisos suficientes"""
@@ -109,3 +111,66 @@ class NFSManager:
             errores.extend(msgs)
         
         return len(errores) == 0, errores
+    
+    @staticmethod
+    def apply_configuration(exports_text: str) -> dict:
+        """
+        Aplica configuración de exportaciones NFS.
+        Este método es llamado directamente cuando se ejecuta como root
+        o por el helper D-Bus cuando se ejecuta como usuario normal.
+        
+        Returns:
+            dict: {'ok': bool, 'msg': str}
+        """
+        try:
+            # Validar que el texto no esté vacío
+            if not exports_text or not exports_text.strip():
+                return {'ok': False, 'msg': 'La configuración no puede estar vacía'}
+            
+            # Crear backup
+            backup_file = ExportsConfigParser.crear_backup()
+            if not backup_file:
+                backup_file = "sin_backup"
+            
+            # Escribir nuevo contenido (requiere permisos)
+            try:
+                with open(NFSManager.EXPORTS_FILE, 'w') as f:
+                    f.write(exports_text)
+            except PermissionError:
+                return {'ok': False, 'msg': 'No hay permisos para escribir /etc/exports. Ejecute como root o use el helper D-Bus.'}
+            except Exception as e:
+                return {'ok': False, 'msg': f'Error al escribir /etc/exports: {str(e)}'}
+            
+            # Validar sintaxis con exportfs -ra
+            exito, mensaje = NFSManager.ejecutar_comando(['exportfs', '-ra'], usar_sudo=False)
+            if not exito:
+                # Restaurar backup si falla
+                if backup_file != "sin_backup":
+                    ExportsConfigParser.restaurar_backup(backup_file)
+                return {'ok': False, 'msg': f'Error de sintaxis al aplicar configuración: {mensaje}'}
+            
+            # Reiniciar servicio (intentar, pero no es crítico)
+            exito_restart, mensaje_restart = NFSManager.ejecutar_comando(
+                ['systemctl', 'restart', 'nfs-server'],
+                usar_sudo=False
+            )
+            
+            msg_final = f'Configuración aplicada exitosamente. Backup guardado en: {backup_file}'
+            if not exito_restart:
+                msg_final += f'\nAdvertencia: No se pudo reiniciar el servicio NFS: {mensaje_restart}'
+            
+            return {'ok': True, 'msg': msg_final}
+                
+        except Exception as e:
+            return {'ok': False, 'msg': f'Error al aplicar configuración: {str(e)}'}
+    
+    @staticmethod
+    def list_exports() -> str:
+        """Lista las exportaciones actuales del sistema usando exportfs -v"""
+        try:
+            exito, salida = NFSManager.ejecutar_comando(['exportfs', '-v'], usar_sudo=False)
+            if exito:
+                return salida.strip() if salida.strip() else "No hay exportaciones configuradas"
+            return f"Error al listar exportaciones: {salida}"
+        except Exception as e:
+            return f"Error: {str(e)}"
