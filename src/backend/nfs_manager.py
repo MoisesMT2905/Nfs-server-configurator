@@ -85,7 +85,7 @@ class NFSManager:
             if exito:
                 return salida.strip().split('\n') if salida.strip() else []
             return []
-        except:
+        except Exception:
             return []
     
     @staticmethod

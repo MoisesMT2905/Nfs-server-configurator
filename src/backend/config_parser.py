@@ -16,7 +16,7 @@ class ExportsConfigParser:
             if os.path.exists(ExportsConfigParser.EXPORTS_FILE):
                 with open(ExportsConfigParser.EXPORTS_FILE, 'r') as f:
                     lineas = f.readlines()
-                return [l.strip() for l in lineas if l.strip() and not l.startswith('#')]
+                return [line.strip() for line in lineas if line.strip() and not line.startswith('#')]
             return []
         except PermissionError:
             raise PermissionError("No hay permisos para leer /etc/exports")
@@ -31,19 +31,19 @@ class ExportsConfigParser:
         match = re.match(r'^(\S+)\s+(.+)$', linea)
         if not match:
             return None, []
-        
+
         directorio = match.group(1)
         clientes_str = match.group(2)
-        
+
         clientes = []
         # Buscar patrones cliente(opciones)
-        patron = r'(\S+?)$$([^)]*)$$'
+        patron = r'(\S+?)\(([^)]*)\)'
         for cliente_match in re.finditer(patron, clientes_str):
             cliente = cliente_match.group(1)
             opciones_str = cliente_match.group(2)
             opciones = ExportsConfigParser._parsear_opciones(opciones_str)
             clientes.append((cliente, opciones))
-        
+
         return directorio, clientes
     
     @staticmethod
