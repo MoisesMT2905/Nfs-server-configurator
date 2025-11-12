@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-"""Interfaz GTK principal. Esta implementación adapta los controles para usar CheckButtons
+Interfaz GTK principal. Esta implementación adapta los controles para usar CheckButtons
 para las 13 opciones de permisos NFS solicitadas y añade validaciones para opciones mutuamente
 exclusivas y validación de UID/GID. Mantiene el resto de la lógica de la GUI.
 """
@@ -8,10 +8,18 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GObject
 import logging
+import os
 
 from src.backend.config_parser import build_export_line
 from src.backend.nfs_manager import NFSManager
 from src.utils.validators import validate_path, validate_client, validate_uid_gid
+
+# Try to import D-Bus for non-root operation
+try:
+    import dbus
+    DBUS_AVAILABLE = True
+except ImportError:
+    DBUS_AVAILABLE = False
 
 LOG = logging.getLogger("gui")
 
@@ -226,6 +234,30 @@ class NFSConfiguratorGUI(Gtk.Window):
             if not validate_uid_gid(anongid):
                 return False, f"anongid '{anongid}' no es un GID válido"
         return True, ""
+    
+    def _apply_via_dbus(self, exports_text):
+        """Apply configuration via D-Bus helper (for non-root users)."""
+        if not DBUS_AVAILABLE:
+            return {"ok": False, "msg": "D-Bus not available. Install python3-dbus package."}
+        
+        try:
+            bus = dbus.SystemBus()
+            obj = bus.get_object("org.yast2.NFSHelper", "/org/yast2/NFSHelper")
+            interface = dbus.Interface(obj, "org.yast2.NFSHelper")
+            
+            success, message = interface.ApplyConfiguration(exports_text)
+            return {"ok": bool(success), "msg": str(message)}
+            
+        except dbus.exceptions.DBusException as e:
+            error_msg = str(e)
+            if "org.freedesktop.PolicyKit1.Error.Dismissed" in error_msg:
+                return {"ok": False, "msg": "Authentication cancelled by user"}
+            elif "ServiceUnknown" in error_msg or "NameHasNoOwner" in error_msg:
+                return {"ok": False, "msg": "NFS Helper service not running. Install and enable yast2-nfs-helper.service"}
+            else:
+                return {"ok": False, "msg": f"D-Bus error: {error_msg}"}
+        except Exception as e:
+            return {"ok": False, "msg": f"Error: {str(e)}"}
 
     def on_apply(self, widget):
         path = self.path_entry.get_text().strip()
@@ -270,8 +302,13 @@ class NFSConfiguratorGUI(Gtk.Window):
         if resp != Gtk.ResponseType.OK:
             return
 
-        # Intentar aplicar (si no hay permisos, NFSManager devolverá mensaje)
-        res = NFSManager.apply_configuration(exports_text)
+        # Check if running as root
+        if os.geteuid() == 0:
+            # Direct apply for root users
+            res = NFSManager.apply_configuration(exports_text)
+        else:
+            # Use D-Bus helper for non-root users
+            res = self._apply_via_dbus(exports_text)
         if res.get("ok"):
             self._show_info("Éxito", res.get("msg"))
             self.on_update(None)

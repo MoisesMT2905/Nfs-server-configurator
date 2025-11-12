@@ -109,3 +109,16 @@ class NFSManager:
             errores.extend(msgs)
         
         return len(errores) == 0, errores
+    
+    # English wrappers for GUI compatibility
+    @staticmethod
+    def list_exports() -> str:
+        """List current NFS exports (wrapper for GUI)"""
+        exports = NFSManager.obtener_exportaciones_actuales()
+        return '\n'.join(exports) if exports else ''
+    
+    @staticmethod
+    def apply_configuration(exports_text: str) -> dict:
+        """Apply NFS configuration (wrapper for GUI)"""
+        success, msg = NFSManager.aplicar_exportaciones(exports_text)
+        return {"ok": success, "msg": msg}
