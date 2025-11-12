@@ -1,0 +1,30 @@
+[Unit]
+Description=YaST2 NFS Server Helper (D-Bus Service)
+Documentation=https://github.com/MoisesMT2905/Nfs-server-configurator
+After=dbus.service
+Requires=dbus.service
+
+[Service]
+Type=dbus
+BusName=org.yast2.NFSHelper
+ExecStart=/usr/libexec/yast2-nfs-server-helper
+User=root
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/exports /etc/exports.backup
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+
+[Install]
+WantedBy=multi-user.target
+Alias=dbus-org.yast2.NFSHelper.service

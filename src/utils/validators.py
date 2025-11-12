@@ -130,3 +130,21 @@ class NFSValidator:
             return 0 <= uid <= 65535
         except ValueError:
             return False
+
+
+# Convenience functions for GUI compatibility
+def validate_path(path: str) -> bool:
+    """Validate directory path - GUI compatibility wrapper"""
+    valid, _ = NFSValidator.validar_directorio(path)
+    return valid
+
+
+def validate_client(client: str) -> bool:
+    """Validate client format - GUI compatibility wrapper"""
+    valid, _ = NFSValidator.validar_cliente(client)
+    return valid
+
+
+def validate_uid_gid(value: str) -> bool:
+    """Validate UID/GID value - GUI compatibility wrapper"""
+    return NFSValidator.validar_uid_gid(value)

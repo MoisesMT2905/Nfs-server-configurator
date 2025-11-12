@@ -109,3 +109,24 @@ class NFSManager:
             errores.extend(msgs)
         
         return len(errores) == 0, errores
+    
+    @staticmethod
+    def apply_configuration(exports_text: str) -> dict:
+        """
+        Apply NFS configuration from text.
+        Returns dict with 'ok' (bool) and 'msg' (str).
+        This is used by the GUI.
+        """
+        success, message = NFSManager.aplicar_exportaciones(exports_text)
+        return {"ok": success, "msg": message}
+    
+    @staticmethod
+    def list_exports() -> str:
+        """
+        List current NFS exports.
+        Returns formatted string for display in GUI.
+        """
+        exports = NFSManager.obtener_exportaciones_actuales()
+        if exports:
+            return '\n'.join(exports)
+        return ""

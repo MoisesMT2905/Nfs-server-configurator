@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-"""Interfaz GTK principal. Esta implementación adapta los controles para usar CheckButtons
+Interfaz GTK principal. Esta implementación adapta los controles para usar CheckButtons
 para las 13 opciones de permisos NFS solicitadas y añade validaciones para opciones mutuamente
 exclusivas y validación de UID/GID. Mantiene el resto de la lógica de la GUI.
+
+Integración con D-Bus helper: cuando no se ejecuta como root, usa el helper privilegiado
+vía D-Bus con autenticación polkit.
 """
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, GObject
+from gi.repository import Gtk, GObject, GLib
 import logging
+import os
 
 from src.backend.config_parser import build_export_line
 from src.backend.nfs_manager import NFSManager
@@ -270,14 +274,20 @@ class NFSConfiguratorGUI(Gtk.Window):
         if resp != Gtk.ResponseType.OK:
             return
 
-        # Intentar aplicar (si no hay permisos, NFSManager devolverá mensaje)
-        res = NFSManager.apply_configuration(exports_text)
-        if res.get("ok"):
-            self._show_info("Éxito", res.get("msg"))
-            self.on_update(None)
+        # Intentar aplicar - usar D-Bus helper si no somos root
+        if os.geteuid() == 0:
+            # Running as root - use direct method for backward compatibility
+            LOG.info("Running as root, using direct NFSManager.apply_configuration")
+            res = NFSManager.apply_configuration(exports_text)
+            if res.get("ok"):
+                self._show_info("Éxito", res.get("msg"))
+                self.on_update(None)
+            else:
+                self._show_error("Fallo al aplicar", res.get("msg"))
         else:
-            # Si falta permisos, informar y sugerir usar helper con polkit
-            self._show_error("Fallo al aplicar", res.get("msg"))
+            # Not root - use D-Bus helper with polkit
+            LOG.info("Not running as root, using D-Bus helper")
+            self._apply_via_dbus_helper(exports_text)
 
     def _show_error(self, title, msg):
         dlg = Gtk.MessageDialog(self, 0, Gtk.MessageType.ERROR, Gtk.ButtonsType.OK, title)
@@ -290,3 +300,55 @@ class NFSConfiguratorGUI(Gtk.Window):
         dlg.format_secondary_text(msg)
         dlg.run()
         dlg.destroy()
+    
+    def _apply_via_dbus_helper(self, exports_text: str):
+        """Apply configuration via D-Bus helper with polkit authorization"""
+        try:
+            from pydbus import SystemBus
+            
+            DBUS_NAME = "org.yast2.NFSHelper"
+            DBUS_PATH = "/org/yast2/NFSHelper"
+            
+            # Connect to system bus
+            bus = SystemBus()
+            
+            # Get the helper service
+            LOG.info(f"Connecting to {DBUS_NAME}...")
+            helper = bus.get(DBUS_NAME, DBUS_PATH)
+            
+            # Call ApplyConfiguration (polkit will prompt for password if needed)
+            LOG.info("Calling ApplyConfiguration via D-Bus...")
+            success, message = helper.ApplyConfiguration(exports_text)
+            
+            # Show results
+            if success:
+                self._show_info("Éxito", message)
+                self.on_update(None)
+            else:
+                self._show_error("Fallo al aplicar", message)
+                
+        except GLib.Error as e:
+            error_msg = (
+                f"No se pudo conectar con el servicio D-Bus:\n{e}\n\n"
+                "Posibles causas:\n"
+                "• El servicio yast2-nfs-helper no está ejecutándose\n"
+                "• Ejecute: sudo systemctl enable --now yast2-nfs-helper\n\n"
+                "Alternativamente, ejecute esta aplicación como root:\n"
+                "sudo python3 main.py"
+            )
+            self._show_error("Error de conexión D-Bus", error_msg)
+            LOG.error(f"D-Bus error: {e}")
+        except ImportError as e:
+            error_msg = (
+                f"Falta la biblioteca pydbus:\n{e}\n\n"
+                "Instale con: sudo zypper install python3-pydbus\n"
+                "o: sudo apt install python3-pydbus\n\n"
+                "Alternativamente, ejecute como root:\n"
+                "sudo python3 main.py"
+            )
+            self._show_error("Falta dependencia", error_msg)
+            LOG.error(f"Import error: {e}")
+        except Exception as e:
+            error_msg = f"Error inesperado: {e}"
+            self._show_error("Error", error_msg)
+            LOG.error(f"Unexpected error: {e}")

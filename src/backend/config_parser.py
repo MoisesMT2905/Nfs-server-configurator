@@ -37,7 +37,7 @@ class ExportsConfigParser:
         
         clientes = []
         # Buscar patrones cliente(opciones)
-        patron = r'(\S+?)$$([^)]*)$$'
+        patron = r'(\S+?)\(([^)]*)\)'
         for cliente_match in re.finditer(patron, clientes_str):
             cliente = cliente_match.group(1)
             opciones_str = cliente_match.group(2)
@@ -132,3 +132,15 @@ class ExportsConfigParser:
             return True
         except PermissionError:
             raise PermissionError("No hay permisos para restaurar backup")
+
+
+def build_export_line(path: str, clients: list, options: dict) -> str:
+    """
+    Build complete export lines for multiple clients.
+    Used by GUI to generate the exports text to apply.
+    """
+    lines = []
+    for client in clients:
+        line = ExportsConfigParser.generar_linea_export(path, client, options)
+        lines.append(line)
+    return '\n'.join(lines)
