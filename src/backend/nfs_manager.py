@@ -85,7 +85,7 @@ class NFSManager:
             if exito:
                 return salida.strip().split('\n') if salida.strip() else []
             return []
-        except:
+        except Exception:
             return []
     
     @staticmethod
@@ -109,3 +109,29 @@ class NFSManager:
             errores.extend(msgs)
         
         return len(errores) == 0, errores
+
+
+# Helper functions for GUI compatibility
+def apply_configuration(exports_text: str) -> dict:
+    """
+    Apply NFS configuration (wrapper for GUI compatibility)
+    
+    Args:
+        exports_text: Complete exports configuration
+        
+    Returns:
+        Dictionary with 'ok' (bool) and 'msg' (str)
+    """
+    success, message = NFSManager.aplicar_exportaciones(exports_text)
+    return {'ok': success, 'msg': message}
+
+
+def list_exports() -> str:
+    """
+    Get current exports as formatted string (wrapper for GUI compatibility)
+    
+    Returns:
+        String with current exports
+    """
+    exports = NFSManager.obtener_exportaciones_actuales()
+    return '\n'.join(exports) if exports else ""

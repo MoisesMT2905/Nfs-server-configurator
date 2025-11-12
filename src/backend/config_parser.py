@@ -16,7 +16,7 @@ class ExportsConfigParser:
             if os.path.exists(ExportsConfigParser.EXPORTS_FILE):
                 with open(ExportsConfigParser.EXPORTS_FILE, 'r') as f:
                     lineas = f.readlines()
-                return [l.strip() for l in lineas if l.strip() and not l.startswith('#')]
+                return [line.strip() for line in lineas if line.strip() and not line.startswith('#')]
             return []
         except PermissionError:
             raise PermissionError("No hay permisos para leer /etc/exports")
@@ -31,19 +31,19 @@ class ExportsConfigParser:
         match = re.match(r'^(\S+)\s+(.+)$', linea)
         if not match:
             return None, []
-        
+
         directorio = match.group(1)
         clientes_str = match.group(2)
-        
+
         clientes = []
         # Buscar patrones cliente(opciones)
-        patron = r'(\S+?)$$([^)]*)$$'
+        patron = r'(\S+?)\(([^)]*)\)'
         for cliente_match in re.finditer(patron, clientes_str):
             cliente = cliente_match.group(1)
             opciones_str = cliente_match.group(2)
             opciones = ExportsConfigParser._parsear_opciones(opciones_str)
             clientes.append((cliente, opciones))
-        
+
         return directorio, clientes
     
     @staticmethod
@@ -132,3 +132,23 @@ class ExportsConfigParser:
             return True
         except PermissionError:
             raise PermissionError("No hay permisos para restaurar backup")
+
+
+# Helper functions for GUI compatibility
+def build_export_line(path: str, clients: List[str], options: dict) -> str:
+    """
+    Build complete export line for multiple clients
+    
+    Args:
+        path: Directory path to export
+        clients: List of client addresses/hostnames
+        options: Dictionary of NFS options
+        
+    Returns:
+        Complete export line(s) as string
+    """
+    lines = []
+    for client in clients:
+        line = ExportsConfigParser.generar_linea_export(path, client, options)
+        lines.append(line)
+    return '\n'.join(lines)
