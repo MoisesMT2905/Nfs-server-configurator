@@ -6,3 +6,14 @@
 # - Linux (Debian/Ubuntu compatible)
 # - nfs-common
 # - nfs-kernel-server
+
+# Python dependencies for GUI and D-Bus integration
+python3-gobject>=3.36.0
+python3-dbus>=1.2.16
+
+# Development and testing dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+flake8>=6.0.0
+
