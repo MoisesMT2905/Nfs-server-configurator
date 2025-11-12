@@ -109,3 +109,23 @@ class NFSManager:
             errores.extend(msgs)
         
         return len(errores) == 0, errores
+    
+    @staticmethod
+    def apply_configuration(exports_text: str) -> dict:
+        """
+        Aplica configuración de exportaciones NFS
+        Retorna dict con keys: 'ok' (bool), 'msg' (str)
+        """
+        success, msg = NFSManager.aplicar_exportaciones(exports_text)
+        return {"ok": success, "msg": msg}
+    
+    @staticmethod
+    def list_exports() -> str:
+        """Lista las exportaciones actuales del sistema"""
+        exports = NFSManager.obtener_exportaciones_actuales()
+        return "\n".join(exports) if exports else ""
+    
+    @staticmethod
+    def backup_exports() -> str:
+        """Crea un backup de /etc/exports y retorna el nombre del archivo"""
+        return ExportsConfigParser.crear_backup()
